@@ -2,31 +2,39 @@ import { CreateUserParams, SignInParams } from "@/type";
 import { Account, Avatars, Client, Databases, ID, Query } from "react-native-appwrite";
 
 export const appwriteConfig = {
-    endpoint: "https://cloud.appwrite.io/v1", // или свой Appwrite endpoint
-    projectId: "6910812c0024e40a24a6",             // скопируй из Appwrite -> Settings -> Project ID
-    databaseId: "6910842700378d0e9f7a",       // твой ID базы
-    userCollectionId: "user",                 // ID коллекции (проверь в консоли Appwrite)
+    endpoint: process.env.EXPO_PUBLIC_APPWRITE_ENDPOINT!,
+    projectId: process.env.EXPO_PUBLIC_APPWRITE_PROJECT_ID!,
+    platform: "com.jsm.foodordering",
+    databaseId: '6910842700378d0e9f7a',
+    userCollectionId: '6918ef7e003d06fe8e55',
 };
-
 
 export const client = new Client()
     .setEndpoint(appwriteConfig.endpoint)
-    .setProject(appwriteConfig.projectId);
+    .setProject(appwriteConfig.projectId)
+    .setPlatform(appwriteConfig.platform);
 
 export const account = new Account(client);
 export const databases = new Databases(client);
-export const avatars = new Avatars(client);
+const avatars = new Avatars(client);
 
-// Создание пользователя
+// Регистрация пользователя
 export const createUser = async ({ email, password, name }: CreateUserParams) => {
     try {
+        // Удаляем все активные сессии текущего пользователя
+        try { await account.deleteSessions(); } catch (_) {}
+
+        // Создаём аккаунт
         const newAccount = await account.create(ID.unique(), email, password, name);
         if (!newAccount) throw new Error('Account not created');
 
-        await signIn({ email, password });
+        // Создаём сессию нового пользователя
+        await account.createEmailPasswordSession(email, password);
 
+        // URL аватара
         const avatarUrl = avatars.getInitialsURL(name);
 
+        // Документ в коллекции
         return await databases.createDocument(
             appwriteConfig.databaseId,
             appwriteConfig.userCollectionId,
@@ -41,15 +49,23 @@ export const createUser = async ({ email, password, name }: CreateUserParams) =>
     } catch (e: any) {
         throw new Error(e.message || 'Failed to create user');
     }
+    
 };
 
 // Вход пользователя
 export const signIn = async ({ email, password }: SignInParams) => {
     try {
-        const session = await account.createEmailPasswordSession(email, password);
-        return session;
+        // Удаляем текущую сессию текущего пользователя, если она есть
+        try {
+            await account.deleteSession('current'); 
+        } catch (_) {
+            // Игнорируем ошибку, если сессии нет
+        }
+
+        // Создаём новую сессию
+        return await account.createEmailPasswordSession(email, password);
     } catch (e: any) {
-        throw new Error(e.message || 'Failed to sign in');
+        throw new Error(e.message || "Failed to sign in");
     }
 };
 
@@ -57,22 +73,19 @@ export const signIn = async ({ email, password }: SignInParams) => {
 export const getCurrentUser = async () => {
     try {
         const currentAccount = await account.get();
-        if (!currentAccount) throw new Error('No current account');
+        if (!currentAccount) throw new Error('No active account');
 
-        // Используем Query для фильтрации
-        const userDocs = await databases.listDocuments(
+        const userDoc = await databases.listDocuments(
             appwriteConfig.databaseId,
             appwriteConfig.userCollectionId,
             [Query.equal('accountId', currentAccount.$id)]
         );
 
-        if (!userDocs || !userDocs.documents || userDocs.documents.length === 0) {
-            throw new Error('User not found');
-        }
+        if (!userDoc.documents || userDoc.documents.length === 0) throw new Error('User not found');
 
-        return userDocs.documents[0];
+        return userDoc.documents[0];
     } catch (e: any) {
-        console.log(e);
+        console.log('getCurrentUser error:', e);
         throw new Error(e.message || 'Failed to get current user');
     }
 };

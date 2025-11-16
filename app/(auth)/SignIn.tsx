@@ -1,35 +1,43 @@
 import CustomButton from "@/components/CustomButton";
 import CustomInput from "@/components/CustomInput";
 import { signIn } from "@/lib/appwrite";
+import useAuthStore from "@/store/auth.store";
 import { Link, router } from "expo-router";
 import { useState } from "react";
 import { Alert, Text, View } from 'react-native';
 
-
 const SignIn = () => {
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [form, setForm] = useState({ email: "", password: "" });
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [form, setForm] = useState({ email: '', password: '' });
 
-  const submit = async () => {
-    const { email, password } = form;
+    // Получаем функцию обновления состояния авторизации
+    const { fetchAuthenticatedUser } = useAuthStore();
 
-    if (!email || !password) {
-      return Alert.alert("Error", "Please enter valid email address & password.");
+    const submit = async () => {
+        const { email, password } = form;
+
+        if(!email || !password) {
+            Alert.alert('Error', 'Please enter valid email address & password.');
+            return;
+        }
+
+        setIsSubmitting(true);
+
+        try {
+            // 1. Создаём сессию в Appwrite
+            await signIn({ email, password });
+
+            // 2. Обновляем Zustand, чтобы store знал о текущем пользователе
+            await fetchAuthenticatedUser();
+
+            // 3. Навигация на главный экран
+            router.replace('/');
+        } catch(error: any) {
+            Alert.alert('Error', error?.message || 'Something went wrong');
+        } finally {
+            setIsSubmitting(false);
+        }
     }
-
-    setIsSubmitting(true);
-
-    try {
-      await signIn({ email, password });
-      router.replace("/"); // Перенаправление после успешного входа
-    } catch (error: any) {
-      Alert.alert("Error", error?.message || "Failed to sign in");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-
 
     return (
         <View className="gap-10 bg-white rounded-lg p-5 mt-5">
